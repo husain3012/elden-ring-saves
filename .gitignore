@@ -1,0 +1,22 @@
+# Only save files are tracked; auto-backup and system files are excluded.
+
+# Per-machine player identity (each person sets their own name via 1-Setup.bat)
+.player
+
+# Timestamped local backups created before every restore (safety net)
+_backups/
+
+# Game's own rolling backup — we manage our own
+saves/*.bak
+
+# Steam cloud metadata
+saves/*.vdf
+saves/steam_autocloud.vdf
+
+# OS metadata
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# PowerShell module cache
+*.psm1.bak
