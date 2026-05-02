@@ -105,8 +105,23 @@ try {
 
     # ── Create and switch to the new branch ───────────────────────────────
     Write-Host ""
-    Write-Info "Creating branch '$targetBranchName' from commit $($forkPoint.Short)..."
-    Invoke-Git @("checkout", "-b", $targetBranchName, $forkPoint.Hash)
+    Write-Info "Creating branch '$targetBranchName'..."
+    Invoke-Git @("checkout", "-b", $targetBranchName)
+    Write-Info "Applying fork-point save files from checkpoint $($forkPoint.Short)..."
+    Invoke-Git @("checkout", $forkPoint.Hash, "--", $myRelPath)
+
+    # Record a timeline-initialization commit when the selected fork point
+    # differs from current save state on the new branch.
+    Invoke-Git @("add", $myRelPath)
+    Push-Location $script:RepoRoot
+    $staged = & git status --porcelain $myRelPath 2>&1
+    Pop-Location
+    if ($staged) {
+        $initMsg = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm')][$myPlayerName] TIMELINE forked from: $($forkPoint.Message)"
+        Invoke-Git @("commit", "-m", $initMsg)
+    } else {
+        Invoke-Git @("restore", "--staged", $myRelPath)
+    }
     Write-OK "Switched to new timeline: $targetBranchName"
 
     # ── Offer to copy fork-point save to game folder ──────────────────────

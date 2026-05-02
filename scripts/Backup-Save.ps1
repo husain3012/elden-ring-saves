@@ -109,7 +109,7 @@ try {
     $hasRemote     = [bool]$remotePushUrl
 
     # ── Write a physical _backups/ snapshot with metadata ─────────────────
-    $backupEntryDir = New-BackupSnapshot -SaveInfo $saveInfo -Meta @{
+    New-BackupSnapshot -SaveInfo $saveInfo -Meta @{
         reason     = "backup"
         message    = $msg
         player     = $myPlayerName

@@ -68,20 +68,7 @@ function Get-EldenRingSaveInfo {
                 ($idx + 1), $d.Name, $d.LastWriteTime.ToString("yyyy-MM-dd HH:mm"), $saveLabel) -ForegroundColor White
         }
         Write-Host ""
-        $pick = 0
-        while ($pick -lt 1 -or $pick -gt $steamDirs.Count) {
-            $raw = (Read-Host "  Enter number (default 1 = most recent)").Trim()
-            if (-not $raw) { $raw = "1" }
-            if ($raw -match '^\d+$') {
-                $pick = [int]$raw
-                if ($pick -lt 1 -or $pick -gt $steamDirs.Count) {
-                    Write-Host "  Please enter a number between 1 and $($steamDirs.Count)." -ForegroundColor Yellow
-                    $pick = 0
-                }
-            } else {
-                Write-Host "  Please enter a number." -ForegroundColor Yellow
-            }
-        }
+        $pick = Read-MenuChoice -Prompt "Enter number (default 1 = most recent)" -Max $steamDirs.Count -Default 1
         $dir = $steamDirs[$pick - 1]
     } else {
         $dir = $steamDirs[0]

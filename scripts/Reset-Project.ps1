@@ -123,7 +123,7 @@ try {
         Write-Info "Force-pushing to remote (history was rewritten)..."
         Push-Location $script:RepoRoot
         $local:ErrorActionPreference = "Continue"
-        $fpOut = (& git push --force origin main 2>&1) | ForEach-Object { "$_" }
+        & git push --force origin main 2>&1 | ForEach-Object { "$_" } | Out-Null
         $fpExit = $LASTEXITCODE
         $local:ErrorActionPreference = "Stop"
         Pop-Location

@@ -114,7 +114,12 @@ try {
 
     $catChoice = 0
     if ($Category) {
-        $catChoice = @(1..$categories.Count | Where-Object { $categories[$_ - 1].Entries[0].Type -eq $Category })[0]
+        for ($ci = 0; $ci -lt $categories.Count; $ci++) {
+            if ($categories[$ci].Entries[0].Type -eq $Category) {
+                $catChoice = $ci + 1
+                break
+            }
+        }
         if (-not $catChoice) {
             throw "Requested category '$Category' is not available right now."
         }
