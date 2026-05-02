@@ -112,65 +112,76 @@ try {
     if ($backupEntries.Count -gt 0) { $categories.Add(@{ Label = "Local Backups   ($($backupEntries.Count) entries)"; Entries = $backupEntries }) }
     if ($friendEntries.Count -gt 0) { $categories.Add(@{ Label = "Friend Saves    ($($friendEntries.Count) entries)"; Entries = $friendEntries }) }
 
-    $catChoice = 0
-    if ($Category) {
-        for ($ci = 0; $ci -lt $categories.Count; $ci++) {
-            if ($categories[$ci].Entries[0].Type -eq $Category) {
-                $catChoice = $ci + 1
-                break
+    $entry = $null
+    while (-not $entry) {
+        $catChoice = 0
+        if ($Category) {
+            for ($ci = 0; $ci -lt $categories.Count; $ci++) {
+                if ($categories[$ci].Entries[0].Type -eq $Category) {
+                    $catChoice = $ci + 1
+                    break
+                }
+            }
+            if (-not $catChoice) {
+                throw "Requested category '$Category' is not available right now."
+            }
+        } elseif ($categories.Count -eq 1) {
+            $catChoice = 1
+        } else {
+            Write-Host "  What would you like to restore from?" -ForegroundColor DarkGray
+            Write-Host ""
+            for ($ci = 0; $ci -lt $categories.Count; $ci++) {
+                Write-Host "    $($ci + 1).  $($categories[$ci].Label)" -ForegroundColor White
+            }
+            Write-Host "    0.  Cancel" -ForegroundColor DarkGray
+            Write-Host ""
+            while ($catChoice -lt 1 -or $catChoice -gt $categories.Count) {
+                $catChoice = Read-MenuChoice -Prompt "Enter 1-$($categories.Count)" -Max $categories.Count -AllowCancel
+                if ($catChoice -eq 0) { Write-Info "Cancelled."; exit 0 }
             }
         }
-        if (-not $catChoice) {
-            throw "Requested category '$Category' is not available right now."
-        }
-    } elseif ($categories.Count -eq 1) {
-        $catChoice = 1
-    } else {
-        Write-Host "  What would you like to restore from?" -ForegroundColor DarkGray
+
+        $activeEntries = @($categories[$catChoice - 1].Entries)
+
+        # ── Step 2: pick entry within category ───────────────────────────
         Write-Host ""
-        for ($ci = 0; $ci -lt $categories.Count; $ci++) {
-            Write-Host "    $($ci + 1).  $($categories[$ci].Label)" -ForegroundColor White
+        Write-Sep
+        Write-Host ("  {0,-4} {1,-22} {2}" -f "#", "Date", "Description") -ForegroundColor DarkGray
+        Write-Sep
+
+        for ($i = 0; $i -lt $activeEntries.Count; $i++) {
+            $e = $activeEntries[$i]
+            $color = switch ($e.Type) {
+                "own"    { "White" }
+                "friend" { "Cyan"  }
+                "backup" { "DarkYellow" }
+            }
+            $marker = if ($e.Type -eq "own" -and $i -eq 0) { "  <- latest" } else { "" }
+            Write-Host ("  {0,-4} {1,-22} {2}{3}" -f ($i + 1), $e.DisplayDate, $e.Description, $marker) -ForegroundColor $color
         }
-        Write-Host "    0.  Cancel" -ForegroundColor DarkGray
+        Write-Sep
         Write-Host ""
-        while ($catChoice -lt 1 -or $catChoice -gt $categories.Count) {
-            $catChoice = Read-MenuChoice -Prompt "Enter 1-$($categories.Count)" -Max $categories.Count -AllowCancel
-            if ($catChoice -eq 0) { Write-Info "Cancelled."; Wait-AnyKey; exit 0 }
+
+        if ($EntryIndex -ge 1) {
+            if ($EntryIndex -gt $activeEntries.Count) {
+                throw "EntryIndex $EntryIndex is out of range for the selected category (max $($activeEntries.Count))."
+            }
+            $choice = $EntryIndex
+        } else {
+            $choice = Read-MenuChoice -Prompt "Enter # to restore (or 0 to go back)" -Max $activeEntries.Count -AllowCancel
+            if ($choice -eq 0) {
+                if ($Category -or $categories.Count -eq 1) {
+                    Write-Info "Cancelled."
+                    exit 0
+                }
+                Write-Info "Going back to source menu..."
+                Write-Host ""
+                continue
+            }
         }
+
+        $entry = $activeEntries[$choice - 1]
     }
-
-    $activeEntries = @($categories[$catChoice - 1].Entries)
-
-    # ── Step 2: pick entry within category ───────────────────────────────
-    Write-Host ""
-    Write-Sep
-    Write-Host ("  {0,-4} {1,-22} {2}" -f "#", "Date", "Description") -ForegroundColor DarkGray
-    Write-Sep
-
-    for ($i = 0; $i -lt $activeEntries.Count; $i++) {
-        $e = $activeEntries[$i]
-        $color = switch ($e.Type) {
-            "own"    { "White" }
-            "friend" { "Cyan"  }
-            "backup" { "DarkYellow" }
-        }
-        $marker = if ($e.Type -eq "own" -and $i -eq 0) { "  <- latest" } else { "" }
-        Write-Host ("  {0,-4} {1,-22} {2}{3}" -f ($i + 1), $e.DisplayDate, $e.Description, $marker) -ForegroundColor $color
-    }
-    Write-Sep
-    Write-Host ""
-
-    if ($EntryIndex -ge 1) {
-        if ($EntryIndex -gt $activeEntries.Count) {
-            throw "EntryIndex $EntryIndex is out of range for the selected category (max $($activeEntries.Count))."
-        }
-        $choice = $EntryIndex
-    } else {
-        $choice = Read-MenuChoice -Prompt "Enter # to restore (or 0 to go back)" -Max $activeEntries.Count -AllowCancel
-        if ($choice -eq 0) { Write-Info "Cancelled."; Wait-AnyKey; exit 0 }
-    }
-
-    $entry = $activeEntries[$choice - 1]
     $entryLabel = switch ($entry.Type) {
         "own"    { "My Checkpoint" }
         "friend" { "Friend: $($entry.FriendName)" }
