@@ -3,11 +3,21 @@
 # or local backup. The flow is two-step: choose a source category first, then
 # choose the specific entry to restore.
 
+param(
+    [ValidateSet("own", "backup", "friend")]
+    [string]$Category,
+    [int]$EntryIndex = 0,
+    [switch]$ConfirmRestore,
+    [switch]$NoPause,
+    [int]$SteamAccountIndex = 0
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 try {
     . (Join-Path $PSScriptRoot "_config.ps1")
+    $script:SkipPause = [bool]$NoPause
     Write-Banner "Restore Checkpoint"
 
     $myPlayerName = Get-PlayerName
@@ -103,7 +113,12 @@ try {
     if ($friendEntries.Count -gt 0) { $categories.Add(@{ Label = "Friend Saves    ($($friendEntries.Count) entries)"; Entries = $friendEntries }) }
 
     $catChoice = 0
-    if ($categories.Count -eq 1) {
+    if ($Category) {
+        $catChoice = @(1..$categories.Count | Where-Object { $categories[$_ - 1].Entries[0].Type -eq $Category })[0]
+        if (-not $catChoice) {
+            throw "Requested category '$Category' is not available right now."
+        }
+    } elseif ($categories.Count -eq 1) {
         $catChoice = 1
     } else {
         Write-Host "  What would you like to restore from?" -ForegroundColor DarkGray
@@ -140,8 +155,15 @@ try {
     Write-Sep
     Write-Host ""
 
-    $choice = Read-MenuChoice -Prompt "Enter # to restore (or 0 to go back)" -Max $activeEntries.Count -AllowCancel
-    if ($choice -eq 0) { Write-Info "Cancelled."; Wait-AnyKey; exit 0 }
+    if ($EntryIndex -ge 1) {
+        if ($EntryIndex -gt $activeEntries.Count) {
+            throw "EntryIndex $EntryIndex is out of range for the selected category (max $($activeEntries.Count))."
+        }
+        $choice = $EntryIndex
+    } else {
+        $choice = Read-MenuChoice -Prompt "Enter # to restore (or 0 to go back)" -Max $activeEntries.Count -AllowCancel
+        if ($choice -eq 0) { Write-Info "Cancelled."; Wait-AnyKey; exit 0 }
+    }
 
     $entry = $activeEntries[$choice - 1]
     $entryLabel = switch ($entry.Type) {
@@ -154,7 +176,7 @@ try {
     Write-Host "  Selected : $entryLabel  —  $($entry.Description)" -ForegroundColor Yellow
     Write-Host ""
 
-    if (-not (Confirm-Prompt "Restore this? Your current save will be backed up first." -Default "N")) {
+    if (-not ($ConfirmRestore -or (Confirm-Prompt "Restore this? Your current save will be backed up first." -Default "N"))) {
         Write-Info "Restore cancelled."; Wait-AnyKey; exit 0
     }
 
@@ -165,7 +187,7 @@ try {
 
     Write-Host ""
     Write-Info "Detecting current save files..."
-    $saveInfo = Get-EldenRingSaveInfo
+    $saveInfo = Get-EldenRingSaveInfo -SteamAccountIndex $SteamAccountIndex
 
     # ── Safety backup of current game files ──────────────────────────────
     $safeBackupDir = New-BackupSnapshot -SaveInfo $saveInfo -Meta @{

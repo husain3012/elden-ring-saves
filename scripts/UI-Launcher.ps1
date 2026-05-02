@@ -132,9 +132,14 @@ foreach ($action in $actions) {
         $button.ForeColor = [System.Drawing.Color]::WhiteSmoke
     }
 
-    $batName = [string]$action.Bat
+    $button.Tag = [pscustomobject]@{
+        BatName  = [string]$action.Bat
+        IsDanger = $isDanger
+    }
     $button.Add_Click({
-        Start-BatAction -BatName $batName -StatusLabel $status -IsDanger:$isDanger
+        param($sender, $eventArgs)
+        $meta = $sender.Tag
+        Start-BatAction -BatName $meta.BatName -StatusLabel $status -IsDanger:$meta.IsDanger
     })
 
     $panel.Controls.Add($button)

@@ -4,12 +4,27 @@
 # both the original and the new branch share the same history up to the fork
 # point, but from here they evolve independently.
 
+param(
+    [int]$CheckpointIndex = 0,
+    [string]$BranchName,
+    [switch]$ConfirmCreate,
+    [switch]$CopyToGameFolder,
+    [switch]$NoCopyToGameFolder,
+    [switch]$NoPause,
+    [int]$SteamAccountIndex = 0
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 try {
     . (Join-Path $PSScriptRoot "_config.ps1")
+    $script:SkipPause = [bool]$NoPause
     Write-Banner "New Timeline (Branch)"
+
+    if ($CopyToGameFolder -and $NoCopyToGameFolder) {
+        throw "CopyToGameFolder and NoCopyToGameFolder cannot both be specified."
+    }
 
     $myPlayerName  = Get-PlayerName
     $myRelPath     = "saves/$myPlayerName"
@@ -43,7 +58,14 @@ try {
     Write-Sep
     Write-Host ""
 
-    $choice = Read-MenuChoice -Prompt "Fork from checkpoint # (Enter for latest)" -Max $checkpoints.Count -Default 1
+    if ($CheckpointIndex -gt 0) {
+        if ($CheckpointIndex -gt $checkpoints.Count) {
+            throw "CheckpointIndex $CheckpointIndex is out of range (max $($checkpoints.Count))."
+        }
+        $choice = $CheckpointIndex
+    } else {
+        $choice = Read-MenuChoice -Prompt "Fork from checkpoint # (Enter for latest)" -Max $checkpoints.Count -Default 1
+    }
 
     $forkPoint = $checkpoints[$choice - 1]
     Write-Host ""
@@ -56,20 +78,26 @@ try {
     Write-Host ""
 
     $existingBranches = (Get-AllBranches).Name
-    $branchName = ""
-    while (-not $branchName) {
-        $raw = (Read-Host "  New timeline name").Trim() -replace '\s+', '-' -replace '[^a-zA-Z0-9\-_]', ''
-        if (-not $raw) {
-            Write-Warn "Name cannot be empty."
-        } elseif ($existingBranches -contains $raw) {
-            Write-Warn "A timeline named '$raw' already exists. Choose a different name."
-        } else {
-            $branchName = $raw
+    $targetBranchName = ""
+    if ($BranchName) {
+        $targetBranchName = $BranchName.Trim() -replace '\s+', '-' -replace '[^a-zA-Z0-9\-_]', ''
+        if (-not $targetBranchName) { throw "BranchName cannot be empty." }
+        if ($existingBranches -contains $targetBranchName) { throw "Timeline '$targetBranchName' already exists." }
+    } else {
+        while (-not $targetBranchName) {
+            $raw = (Read-Host "  New timeline name").Trim() -replace '\s+', '-' -replace '[^a-zA-Z0-9\-_]', ''
+            if (-not $raw) {
+                Write-Warn "Name cannot be empty."
+            } elseif ($existingBranches -contains $raw) {
+                Write-Warn "A timeline named '$raw' already exists. Choose a different name."
+            } else {
+                $targetBranchName = $raw
+            }
         }
     }
 
     Write-Host ""
-    if (-not (Confirm-Prompt "Create timeline '$branchName' from: $($forkPoint.Message)?" -Default "Y")) {
+    if (-not ($ConfirmCreate -or (Confirm-Prompt "Create timeline '$targetBranchName' from: $($forkPoint.Message)?" -Default "Y"))) {
         Write-Info "Cancelled."
         Wait-AnyKey
         exit 0
@@ -77,9 +105,9 @@ try {
 
     # ── Create and switch to the new branch ───────────────────────────────
     Write-Host ""
-    Write-Info "Creating branch '$branchName' from commit $($forkPoint.Short)..."
-    Invoke-Git @("checkout", "-b", $branchName, $forkPoint.Hash)
-    Write-OK "Switched to new timeline: $branchName"
+    Write-Info "Creating branch '$targetBranchName' from commit $($forkPoint.Short)..."
+    Invoke-Git @("checkout", "-b", $targetBranchName, $forkPoint.Hash)
+    Write-OK "Switched to new timeline: $targetBranchName"
 
     # ── Offer to copy fork-point save to game folder ──────────────────────
     Write-Host ""
@@ -87,11 +115,12 @@ try {
     Write-Host "    $($forkPoint.Message)" -ForegroundColor White
     Write-Host ""
 
-    if (Confirm-Prompt "Copy the fork-point save to your game folder now?" -Default "Y") {
+    $shouldCopy = if ($CopyToGameFolder) { $true } elseif ($NoCopyToGameFolder) { $false } else { Confirm-Prompt "Copy the fork-point save to your game folder now?" -Default "Y" }
+    if ($shouldCopy) {
         if (Test-GameRunning) {
             Write-Fail "Elden Ring is running. Close the game first, then use  3-Restore.bat  to apply the save."
         } else {
-            $saveInfo      = Get-EldenRingSaveInfo
+            $saveInfo      = Get-EldenRingSaveInfo -SteamAccountIndex $SteamAccountIndex
             $myDir         = Get-MySavesDir
             $restoredFiles = Get-SaveFiles $myDir
             foreach ($rf in $restoredFiles) {
@@ -105,10 +134,10 @@ try {
 
     Write-Host ""
     Write-Sep
-    Write-OK "New timeline '$branchName' is ready!"
+    Write-OK "New timeline '$targetBranchName' is ready!"
     Write-Host ""
     Write-Host "  You are now on branch: " -NoNewline -ForegroundColor DarkGray
-    Write-Host $branchName                 -ForegroundColor Cyan
+    Write-Host $targetBranchName           -ForegroundColor Cyan
     Write-Host ""
     Write-Host "  From now on, backups with  2-Backup.bat  will go to THIS branch." -ForegroundColor DarkGray
     Write-Host "  Use  6-Switch-Timeline.bat  to jump back to '$currentBranch' any time." -ForegroundColor DarkGray

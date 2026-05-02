@@ -13,11 +13,18 @@
 #   * .gitignore
 #   * The configured remote origin URL (if any)
 
+param(
+    [switch]$ConfirmReset,
+    [switch]$SkipForcePush,
+    [switch]$NoPause
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 try {
     . (Join-Path $PSScriptRoot "_config.ps1")
+    $script:SkipPause = [bool]$NoPause
     Write-Banner "Reset Project for New User"
 
     Write-Host "  This script wipes ALL save history so a new player can start" -ForegroundColor Yellow
@@ -37,23 +44,25 @@ try {
     Write-Host ""
 
     # ── Confirmation 1 ────────────────────────────────────────────────────
-    Write-Host "  !! STEP 1 OF 2 !!" -ForegroundColor Red
-    $ans1 = (Read-Host "  Are you absolutely sure? Type  YES  (uppercase) to continue").Trim()
-    if ($ans1 -cne "YES") {
-        Write-Info "Reset cancelled — nothing was changed."
-        Wait-AnyKey
-        exit 0
-    }
+    if (-not $ConfirmReset) {
+        Write-Host "  !! STEP 1 OF 2 !!" -ForegroundColor Red
+        $ans1 = (Read-Host "  Are you absolutely sure? Type  YES  (uppercase) to continue").Trim()
+        if ($ans1 -cne "YES") {
+            Write-Info "Reset cancelled — nothing was changed."
+            Wait-AnyKey
+            exit 0
+        }
 
-    Write-Host ""
+        Write-Host ""
 
-    # ── Confirmation 2 ────────────────────────────────────────────────────
-    Write-Host "  !! STEP 2 OF 2  —  POINT OF NO RETURN !!" -ForegroundColor Red
-    $ans2 = (Read-Host "  Type  RESET  (uppercase) to permanently erase everything").Trim()
-    if ($ans2 -cne "RESET") {
-        Write-Info "Reset cancelled — nothing was changed."
-        Wait-AnyKey
-        exit 0
+        # ── Confirmation 2 ────────────────────────────────────────────────
+        Write-Host "  !! STEP 2 OF 2  —  POINT OF NO RETURN !!" -ForegroundColor Red
+        $ans2 = (Read-Host "  Type  RESET  (uppercase) to permanently erase everything").Trim()
+        if ($ans2 -cne "RESET") {
+            Write-Info "Reset cancelled — nothing was changed."
+            Wait-AnyKey
+            exit 0
+        }
     }
 
     Write-Host ""
@@ -109,7 +118,7 @@ try {
 
     # ── Force-push to remote if one was configured ────────────────────────
     $pushNote = ""
-    if ($remoteUrl) {
+    if ($remoteUrl -and -not $SkipForcePush) {
         Write-Host ""
         Write-Info "Force-pushing to remote (history was rewritten)..."
         Push-Location $script:RepoRoot
@@ -125,6 +134,9 @@ try {
             Write-Warn "Force-push failed. Run manually:  git push --force origin main"
             $pushNote = "Force-push failed — run it manually after 1-Setup.bat."
         }
+    } elseif ($remoteUrl -and $SkipForcePush) {
+        $pushNote = "Force-push skipped (SkipForcePush)."
+        Write-Info "Skipping force-push (SkipForcePush)."
     }
 
     # ── Done ─────────────────────────────────────────────────────────────

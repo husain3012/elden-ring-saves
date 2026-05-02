@@ -3,12 +3,26 @@
 # Switching timelines changes saves/ to match that branch's latest checkpoint
 # and optionally loads that save into the game folder.
 
+param(
+    [string]$TargetBranch,
+    [switch]$ConfirmSwitch,
+    [switch]$LoadToGameFolder,
+    [switch]$NoLoadToGameFolder,
+    [switch]$NoPause,
+    [int]$SteamAccountIndex = 0
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 try {
     . (Join-Path $PSScriptRoot "_config.ps1")
+    $script:SkipPause = [bool]$NoPause
     Write-Banner "Switch Timeline (Branch)"
+
+    if ($LoadToGameFolder -and $NoLoadToGameFolder) {
+        throw "LoadToGameFolder and NoLoadToGameFolder cannot both be specified."
+    }
 
     $currentBranch = Get-CurrentBranch
     $branches      = @(Get-AllBranches)
@@ -42,9 +56,13 @@ try {
     Write-Sep
     Write-Host ""
 
-    $choice = Read-MenuChoice -Prompt "Enter the # of the timeline to switch to" -Max $branches.Count
-
-    $target = $branches[$choice - 1]
+    if ($TargetBranch) {
+        $target = @($branches | Where-Object { $_.Name -eq $TargetBranch })[0]
+        if (-not $target) { throw "Timeline '$TargetBranch' was not found." }
+    } else {
+        $choice = Read-MenuChoice -Prompt "Enter the # of the timeline to switch to" -Max $branches.Count
+        $target = $branches[$choice - 1]
+    }
 
     if ($target.Current) {
         Write-Host ""
@@ -58,7 +76,7 @@ try {
     Write-Host $target.Name       -ForegroundColor Yellow
     Write-Host ""
 
-    if (-not (Confirm-Prompt "Switch to timeline '$($target.Name)'?" -Default "Y")) {
+    if (-not ($ConfirmSwitch -or (Confirm-Prompt "Switch to timeline '$($target.Name)'?" -Default "Y"))) {
         Write-Info "Cancelled."
         Wait-AnyKey
         exit 0
@@ -102,8 +120,9 @@ try {
             Write-Info "Close the game, then run  3-Restore.bat  and pick the top entry to load this branch's save."
         } else {
             Write-Host ""
-            if (Confirm-Prompt "Load this timeline's save into your game folder now?" -Default "Y") {
-                $saveInfo = Get-EldenRingSaveInfo
+            $shouldLoad = if ($LoadToGameFolder) { $true } elseif ($NoLoadToGameFolder) { $false } else { Confirm-Prompt "Load this timeline's save into your game folder now?" -Default "Y" }
+            if ($shouldLoad) {
+                $saveInfo = Get-EldenRingSaveInfo -SteamAccountIndex $SteamAccountIndex
                 foreach ($sf in $saveFiles) {
                     $dest = Join-Path $saveInfo.Path $sf.Name
                     Copy-Item -Path $sf.FullName -Destination $dest -Force

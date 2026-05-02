@@ -2,16 +2,26 @@
 # Backup-Save.ps1 — Create a named checkpoint of your current save files.
 # Run this before any risky quests, boss fights, or major decisions.
 
+param(
+    [string]$Message,
+    [switch]$ContinueIfGameRunning,
+    [switch]$AllowNoChanges,
+    [switch]$NoPush,
+    [switch]$NoPause,
+    [int]$SteamAccountIndex = 0
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 try {
     . (Join-Path $PSScriptRoot "_config.ps1")
+    $script:SkipPause = [bool]$NoPause
     Write-Banner "Backup / Create Checkpoint"
 
     # ── Detect save files ─────────────────────────────────────────────────
     Write-Info "Detecting save files..."
-    $saveInfo     = Get-EldenRingSaveInfo
+    $saveInfo     = Get-EldenRingSaveInfo -SteamAccountIndex $SteamAccountIndex
     $myPlayerName = Get-PlayerName
     $myDir        = Get-MySavesDir
     $myRelPath    = "saves/$myPlayerName"
@@ -28,7 +38,8 @@ try {
         Write-Warn "Elden Ring appears to be running."
         Write-Warn "The save file may be incomplete while the game is open."
         Write-Host ""
-        if (-not (Confirm-Prompt "Continue anyway?" -Default "N")) {
+        $shouldContinue = $ContinueIfGameRunning -or (Confirm-Prompt "Continue anyway?" -Default "N")
+        if (-not $shouldContinue) {
             Write-Info "Backup cancelled. Close the game first for a clean save."
             Wait-AnyKey
             exit 0
@@ -40,10 +51,15 @@ try {
     Write-Host "  Describe this checkpoint (what you are about to do, or what just happened)." -ForegroundColor DarkGray
     Write-Host "  Examples:  Before Malenia fight  |  Finished Ranni questline  |  About to try invasion" -ForegroundColor DarkGray
     Write-Host ""
-    $msg = ""
-    while (-not $msg) {
-        $msg = (Read-Host "  Checkpoint message").Trim()
-        if (-not $msg) { Write-Warn "Message cannot be empty. Please enter something." }
+    if ($Message) {
+        $msg = $Message.Trim()
+        if (-not $msg) { throw "Message cannot be empty." }
+    } else {
+        $msg = ""
+        while (-not $msg) {
+            $msg = (Read-Host "  Checkpoint message").Trim()
+            if (-not $msg) { Write-Warn "Message cannot be empty. Please enter something." }
+        }
     }
 
     # ── Copy save files into saves/<player>/ ──────────────────────────────
@@ -64,7 +80,8 @@ try {
         Write-Host ""
         Write-Warn "Save files have not changed since the last checkpoint."
         Write-Host ""
-        if (-not (Confirm-Prompt "Create a checkpoint anyway (no file changes will be recorded)?" -Default "N")) {
+        $allowEmpty = $AllowNoChanges -or (Confirm-Prompt "Create a checkpoint anyway (no file changes will be recorded)?" -Default "N")
+        if (-not $allowEmpty) {
             Write-Info "No checkpoint created."
             Wait-AnyKey
             exit 0
@@ -102,7 +119,9 @@ try {
 
     # ── Push to remote if configured ──────────────────────────────────────
     $pushStatus = ""
-    if ($hasRemote) {
+    if ($NoPush) {
+        $pushStatus = "Skipped push (NoPush)"
+    } elseif ($hasRemote) {
         Write-Host ""
         Write-Info "Pushing to remote ($remotePushUrl)..."
         try {

@@ -5,6 +5,7 @@ $script:RepoRoot         = Split-Path $PSScriptRoot -Parent
 $script:SavesDir         = Join-Path $script:RepoRoot "saves"
 $script:BackupsDir       = Join-Path $script:RepoRoot "_backups"
 $script:PlayerConfigFile = Join-Path $script:RepoRoot ".player"
+$script:SkipPause        = $false
 
 # ---------------------------------------------------------------------------
 # Save-path detection (standard + Seamless Co-op mod)
@@ -19,6 +20,10 @@ function Get-EldenRingSaveInfo {
             .Path     — full path to the Steam-ID sub-folder
             .Files[]  — array of { Name, FullPath, Label }
     #>
+    param(
+        [int]$SteamAccountIndex = 0   # 1-based index; 0 = interactive/default behavior
+    )
+
     $base = Join-Path $env:APPDATA "EldenRing"
 
     if (-not (Test-Path $base)) {
@@ -42,7 +47,12 @@ function Get-EldenRingSaveInfo {
 
     # If there is more than one Steam account on this PC, ask the user which
     # one to use rather than silently picking the most-recently-written one.
-    if ($steamDirs.Count -gt 1) {
+    if ($SteamAccountIndex -gt 0) {
+        if ($SteamAccountIndex -gt $steamDirs.Count) {
+            throw "Steam account index $SteamAccountIndex is out of range. Found $($steamDirs.Count) account(s)."
+        }
+        $dir = $steamDirs[$SteamAccountIndex - 1]
+    } elseif ($steamDirs.Count -gt 1) {
         Write-Host ""
         Write-Host "  Multiple Steam accounts detected. Choose which save to use:" -ForegroundColor Yellow
         Write-Host ""
@@ -310,6 +320,7 @@ function Read-MenuChoice {
 }
 
 function Wait-AnyKey {
+    if ($script:SkipPause) { return }
     Write-Host ""
     Write-Host "  Press Enter to close..." -ForegroundColor DarkGray
     $null = Read-Host

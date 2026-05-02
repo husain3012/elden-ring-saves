@@ -1,11 +1,16 @@
 ﻿#Requires -Version 5.1
 # List-Checkpoints.ps1 — View all saved checkpoints across all branches.
 
+param(
+    [switch]$NoPause
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 try {
     . (Join-Path $PSScriptRoot "_config.ps1")
+    $script:SkipPause = [bool]$NoPause
     Write-Banner "Checkpoint History"
 
     $myPlayerName = Get-PlayerName
@@ -57,6 +62,39 @@ try {
     Write-Host "    Dark gray  — system / auto-backup"                 -ForegroundColor DarkGray
     Write-Host "    Yellow     — restore event"                        -ForegroundColor DarkYellow
     Write-Host ""
+
+    # ── Show restore events from local _backups metadata ────────────────
+    $restoreEvents = @(
+        Get-ChildItem $script:BackupsDir -Directory -ErrorAction SilentlyContinue |
+            Sort-Object Name -Descending |
+            ForEach-Object {
+                $metaFile = Join-Path $_.FullName "meta.json"
+                if (-not (Test-Path $metaFile)) { return }
+                try {
+                    $m = Get-Content $metaFile -Raw | ConvertFrom-Json
+                    if ($m.reason -eq "pre-restore" -and $m.player -eq $myPlayerName) {
+                        [pscustomobject]@{
+                            Date    = $_.Name
+                            Type    = $m.linkedType
+                            Details = $m.linkedDesc
+                        }
+                    }
+                } catch {
+                    return
+                }
+            }
+    )
+    if ($restoreEvents.Count -gt 0) {
+        Write-Sep
+        Write-Host "  Recent restore events (from local backups):" -ForegroundColor DarkGray
+        $ri = 1
+        foreach ($r in $restoreEvents) {
+            Write-Host ("    {0,-3} {1}  ({2})  {3}" -f $ri, $r.Date, $r.Type, $r.Details) -ForegroundColor DarkYellow
+            $ri++
+            if ($ri -gt 10) { break }
+        }
+        Write-Sep
+    }
 
     # ── List all branches ──────────────────────────────────────────────────
     $branches = @(Get-AllBranches)

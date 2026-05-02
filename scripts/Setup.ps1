@@ -2,11 +2,22 @@
 # Setup.ps1 — Run once to initialize the Elden Ring Save Manager.
 # After this you can use Backup, Restore, and the other scripts freely.
 
+param(
+    [string]$GitName,
+    [string]$GitEmail,
+    [string]$PlayerName,
+    [string]$RemoteUrl,
+    [switch]$SkipRemotePrompt,
+    [switch]$NoPause,
+    [int]$SteamAccountIndex = 0
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 try {
     . (Join-Path $PSScriptRoot "_config.ps1")
+    $script:SkipPause = [bool]$NoPause
     Write-Banner "First-Time Setup"
 
     # ── 1. Check git is installed ──────────────────────────────────────────
@@ -32,10 +43,21 @@ try {
     }
 
     # ── 3. Configure local git identity (no global config touched) ────────
-    $cfgName  = (& git -C $script:RepoRoot config --local user.name  2>&1).Trim()
-    $cfgEmail = (& git -C $script:RepoRoot config --local user.email 2>&1).Trim()
+    $cfgName  = [string](((& git -C $script:RepoRoot config --local user.name  2>&1) | ForEach-Object { "$_" }) -join "")
+    $cfgEmail = [string](((& git -C $script:RepoRoot config --local user.email 2>&1) | ForEach-Object { "$_" }) -join "")
+    $cfgName  = $cfgName.Trim()
+    $cfgEmail = $cfgEmail.Trim()
 
-    if (-not $cfgName -or -not $cfgEmail) {
+    $hasSuppliedIdentity = [bool]$GitName -or [bool]$GitEmail
+    if ($hasSuppliedIdentity) {
+        $targetName  = if ($GitName)  { $GitName.Trim()  } elseif ($cfgName)  { $cfgName  } else { "Elden Ring Player" }
+        $targetEmail = if ($GitEmail) { $GitEmail.Trim() } elseif ($cfgEmail) { $cfgEmail } else { "player@localhost" }
+        if (-not $targetName)  { $targetName  = "Elden Ring Player" }
+        if (-not $targetEmail) { $targetEmail = "player@localhost" }
+        Invoke-Git @("config", "--local", "user.name",  $targetName)
+        Invoke-Git @("config", "--local", "user.email", $targetEmail)
+        Write-OK "Git identity set to: $targetName ($targetEmail)"
+    } elseif (-not $cfgName -or -not $cfgEmail) {
         Write-Host ""
         Write-Host "  Git needs a name and e-mail to label your commits." -ForegroundColor DarkGray
         Write-Host "  These are stored locally in this repo only." -ForegroundColor DarkGray
@@ -57,7 +79,13 @@ try {
         $existingPlayer = (Get-Content $script:PlayerConfigFile -Raw -Encoding UTF8).Trim()
     }
 
-    if ($existingPlayer) {
+    if ($PlayerName) {
+        $sanitizedPlayer = $PlayerName.Trim() -replace '[^a-zA-Z0-9\-_]', ''
+        if (-not $sanitizedPlayer) { throw "PlayerName cannot be empty after sanitization." }
+        [System.IO.File]::WriteAllText($script:PlayerConfigFile, $sanitizedPlayer)
+        Write-OK "Player name set to: $sanitizedPlayer  (saves/$sanitizedPlayer/)"
+        $existingPlayer = $sanitizedPlayer
+    } elseif ($existingPlayer) {
         Write-OK "Player name: $existingPlayer  (saves/$existingPlayer/)"
     } else {
         Write-Host ""
@@ -90,7 +118,7 @@ try {
 
     # ── 6. Verify save files are detectable ───────────────────────────────
     Write-Info "Detecting Elden Ring save files..."
-    $saveInfo = Get-EldenRingSaveInfo
+    $saveInfo = Get-EldenRingSaveInfo -SteamAccountIndex $SteamAccountIndex
     Write-OK "Steam ID : $($saveInfo.SteamId)"
     foreach ($f in $saveInfo.Files) {
         Write-OK "Save file : $($f.Name)  ($($f.Label))"
@@ -113,13 +141,21 @@ try {
     }
 
     # ── 7. Configure remote origin (for syncing with friends) ────────────
-    Push-Location $script:RepoRoot
-    $existingOrigin = (& git remote get-url origin 2>&1).Trim()
-    $hasOrigin = ($LASTEXITCODE -eq 0 -and $existingOrigin -and -not ($existingOrigin -match '^fatal'))
-    Pop-Location
+    $existingOrigin = Get-RemoteUrl
+    $hasOrigin = [bool]$existingOrigin
 
-    if ($hasOrigin) {
+    if ($RemoteUrl) {
+        if ($hasOrigin) {
+            Invoke-Git @("remote", "set-url", "origin", $RemoteUrl)
+        } else {
+            Invoke-Git @("remote", "add", "origin", $RemoteUrl)
+        }
+        Write-OK "Remote origin set: $RemoteUrl"
+        Write-Info "Run  2-Backup.bat  — it will push to this remote after every checkpoint."
+    } elseif ($hasOrigin) {
         Write-OK "Remote origin: $existingOrigin"
+    } elseif ($SkipRemotePrompt) {
+        Write-Info "No remote set (SkipRemotePrompt). Saves are stored locally only."
     } else {
         Write-Host ""
         Write-Host "  OPTIONAL: Enter a remote Git URL so backups sync to a shared server." -ForegroundColor DarkGray
